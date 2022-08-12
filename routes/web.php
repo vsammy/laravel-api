@@ -50,10 +50,4 @@ Route::get('/setup', function() {
     }
 });
 
-/*
-{
-    "admin": "1|DjxenNf5vkcUBfR8na2Zh6ywB7opJFccUSvfGROa",
-    "update": "2|WuO0dqp1CtEWVXGVUsGoWHFAi8lL0Qs066oKxp06",
-    "basic": "3|v2uQcoFoVMSUmx7iuJsrOYvHEu2GP7kpVlgScF5B"
-}
-*/
+
