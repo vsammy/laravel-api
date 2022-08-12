@@ -1,0 +1,425 @@
+1) create a new project :
+        laravel new laravel-api
+
+2) create a database (mysql) :
+        mysql -uroot -p
+        create database laravel_api;
+
+3) check the .env file for database connections.
+
+4) start creating the model with all flags :
+        php artisan make:model Customer --all      
+        this command will create :
+            4.1 Factory
+            4.2 Create Migration Customer Table
+            4.3 Seeder
+            4.4 Request
+            4.5 Constroller
+            4.6 Policy
+        php artisan make:model Invoice --all
+            4.1 Factory
+            4.2 Create Migration Invoice Table
+            4.3 Seeder
+            4.4 Request
+            4.5 Constroller
+            4.6 Policy
+
+5) configure Customer relationship with Invoice :
+        The relationship is Many Invoices to One Customer
+        open  /app/Models/Customer.php and add :
+            public function invoices() {
+                return $this->hasMany(Invoice::class);
+            }
+
+6) configure Invoce relationship with Customer :
+        The relationship is belongsTo
+        open /app/Models/Invice.php and add :
+            public function customer() {
+                return $this->belongsTo(Customer::class);
+            }
+
+7) configure the customers table first :
+        open /database/migrations/2022_08_09_180443_create_customers_table.php
+        update the table to :
+        Schema::create('customers', function (Blueprint $table) {
+            $table->id();
+            $table->string('name');
+            $table->string('type'); // (i)individual or (b)bussiness
+            $table->string('email');
+            $table->string('address');
+            $table->string('city');
+            $table->string('state');
+            $table->string('postal_code');
+            $table->timestamps();
+        });
+
+8) configure the Invoices table second :
+        open /database/migrations/2022_08_09_180713_create_invoices_table.php
+        update the table to :                
+        Schema::create('invoices', function (Blueprint $table) {
+            $table->id();
+            $table->integer('customer_id');
+            $table->integer('amount');
+            $table->string('status'); // billed, paid, void
+            $table->dateTime('billed_date');
+            $table->dateTime('paid_date')->nullable();
+            $table->timestamps();
+        });
+
+9) configure Customer Factory :
+        open file /database/factories/CustomerFactory.php and type :
+
+        $type = $this->faker->randomElement(['I', 'B']);
+        $name = $type == 'I' ? $this->faker->name() : $this->faker->company();
+
+        return [
+            'name' => $name,
+            'type' => $type,
+            'email' => $this->faker->email(),
+            'address' => $this->faker->streetAddress(),
+            'city' => $this->faker->city(),
+            'state' => $this->faker->state(),
+            'postal_code' => $this->faker->postcode(),
+        ];
+
+10) configure Invoice Factory :
+        open file /database/factories/InvoiceFactory.php and type :
+
+        $status = $this->faker->randomElement(['B', 'P', 'V']);
+        
+        return [
+            'customer_id' => Customer::factory(),
+            'amount' => $this->faker->numberBetween(100, 200000),
+            'status' => $status,
+            'billed_date' => $this->faker->dateTimeThisDecade(),
+            'paid_date' => $status == 'P' ? $this->faker->dateTimeThisDecade() : NULL
+        ];
+
+11) configure Customer seeder :
+        open file /database/seeders/CustomerSeeder.php       
+
+        // create 25 Customer with 10 invoices each
+        Customer::factory()
+            ->count(25)
+            ->hasInvoices(10)
+            ->create();
+
+        // create 100 Customer with 5 invoices each
+        Customer::factory()
+            ->count(100)
+            ->hasInvoices(5)
+            ->create();
+
+        // create 100 Customer with 3 invoices each
+        Customer::factory()
+        ->count(100)
+        ->hasInvoices(3)
+        ->create();
+
+        // create 5 Customer without any invoice
+        Customer::factory()
+        ->count(5)        
+        ->create();
+
+12) We don't need to seed our InvoiceSeeder. we done it on CustomerSeeder !!
+
+13) configure Database Seeder :
+    open file /database/seeders/DatabseSeeder.php 
+
+    $this->call([
+            CustomerSeeder::class
+    ]);
+
+14) type the next command in the terminal :
+        php artisan migrate:fresh --seed
+        Now we have 2 tables with seeded data.
+
+15) create a new folder named "Api" under /app/Http/Controllers.
+
+16) create a new folder name "V1" under /app/Http/Constrollers/Api.
+
+17) move the CustomerController and InviceController to folder v1.
+    then fix the namespaces for both files.
+
+    from : namespace App\Http\Controllers;
+    to   : namespace App\Http\Controllers\Api\V1;
+
+    add  : use App\Http\Controllers\Controller;
+
+18 open CustomerController and add the next command to index method :
+        return Customer::all();
+
+19 now we need to set the route for the api.
+        open file /routes/api.php
+
+        Route::group(['prefix' => 'v1', 'namespace' => 'App\Http\Controllers\Api\V1'], function() {
+            Route::apiResource('customers', CustomerController::class);
+            Route::apiResource('invoices', InvoiceController::class);
+        }); 
+
+20) open browser :
+        php artisan serve
+        goto : /api/v1/customers
+
+21) the JSON output show some fileds from database with underscore.
+    when working with JSON we need to use camelcase !!
+
+22) we will create a new Customer Resource for that.
+        php artisan make:resource V1\CustomerResource
+        this will create a new file in :
+            /app/Http/Resources/V1/CustomerResource.php
+        enter the next code :
+            // this will be the fields for the json output for a specific customer
+            // without the fields created_at & updated_at
+            return [
+                'id' => $this->id,
+                'name' => $this->name,
+                'type' => $this->type,
+                'email' => $this->email,
+                'address' => $this->address,
+                'city' => $this->city,
+                'state' => $this->state,
+                'postalCode' => $this->postal_code  // this field changed to camelCase
+            ];
+
+23) open Customer Controller and update the method show :
+        public function show(Customer $customer)
+        {
+            //return $customer;        
+            $includeInvoices = request()->query('includeInvoices');
+
+            if ($includeInvoices) {
+                // load missing invoices
+                return new CustomerResource($customer->loadMissing('invoices'));
+            } 
+
+            return new CustomerResource($customer);
+        }
+
+        olso add the class :
+            use App\Http\Resources\V1\CustomerCollection;
+            use App\Http\Resources\V1\CustomerResource;
+            use App\Filters\V1\CustomersFilter;
+
+24) we will create a new Customer Resource for that.
+        php artisan make:resource V1\CustomerCollection
+        this will create a new file in :
+            /app/Http/Resources/V1/CustomerCollection.php                      
+        we don't make any changes.
+        //**********************************************************************
+        when we use CustomerCollection he assume that we have a CustomerResource
+        //**********************************************************************
+
+25) open the Customer Controller and change the index method :
+
+        from : return Customer::all();
+        to   : return new CustomerCollection(Customer::paginate());
+
+        add  : use App\Http\Resources\V1\CustomerCollection;
+
+26) now we do the same for InvoiceController
+        php artisan make:resource V1\InvoiceResource
+        return [
+            'id' => $this->id,
+            'customer_id' => $this->customer_id,
+            'amount' => $this->amount,
+            'status' => $this->status,
+            'billedDate' => $this->billed_date,
+            'paidDate' => $this->paid_date          
+        ];
+        php artisan make:resource V1\InvoiceCollection
+
+27) add next lines to index & show methods in InvoiceController :
+        use App\Http\Resources\V1\InvoiceCollection;
+        use App\Http\Resources\V1\InvoiceResource;
+        use App\Filters\V1\InvoicesFilter;
+
+        public function index(Request $request)
+        {
+            $filter = new InvoicesFilter();
+            $filterItems = $filter->transform($request); // [['column', 'operator', 'value']]
+
+            if (count($filterItems) == 0) {
+                return new InvoiceCollection(Invoice::paginate());
+            } else {
+                $invoices = Invoice::where($filterItems)->paginate();
+                return new InvoiceCollection($invoices->appends($request->query()));
+            }        
+        }
+
+        public function show(Invoice $invoice)
+        {
+            return new InvoiceResource($invoice);
+        }
+
+28) filtering data :
+        we will create a new folder :
+            /app/Filters
+            /app/Filters/V1
+
+29) create a new file :
+        /app/Filters/ApiFilter.php
+
+        class ApiFilter{
+            protected $safeParms = [];
+
+            protected $columnMap = [];
+
+            protected $operatorMap = [];
+
+            public function transform(Request $request) {
+                $eloQuery = [];
+
+                foreach($this->safeParms as $parm => $operators) {
+                    $query = $request->query($parm);
+
+                    if(!isset($query)) {
+                        continue;
+                    }
+
+                    $column = $this->columnMap[$parm] ?? $parm;
+
+                    foreach ($operators as $operator) {
+                        if(isset($query[$operator])) {
+                            $eloQuery[] = [$column, $this->operatorMap[$operator], $query[$operator]];
+                        }
+                    }
+                }
+
+                return $eloQuery;
+            }
+        }            
+
+30) we will create a new file named CustomersFilter.php inside /app/Filters/V1.
+    enter the next code :
+        <?php
+
+        namespace App\Filters\V1;
+
+        use Illuminate\Http\Request;
+
+        class CustomersFilter extends ApiFilter{
+            protected $safeParms = [
+                'name' => ['eq'],
+                'type' => ['eq'],
+                'email' => ['eq'],
+                'address' => ['eq'],
+                'city' => ['eq'],
+                'state' => ['eq'],
+                'postalCode' => ['eq', 'gt', 'lt']
+            ];
+
+            protected $columnMap = [
+                'postalCode' => 'postal_code'
+            ];
+
+            protected $operatorMap = [
+                'eq' => '=',
+                'lt' => '<',
+                'lte' => '<=',
+                'gt' => '>',
+                'gte' => '>='
+            ];
+        }
+
+31) add to CustomerController :
+        use App\Filters\V1\CustomersFilter;
+
+        update "index" method :
+
+            public function index(Request $request)
+            {
+                $filter = new CustomersFilter();
+                $filterItems = $filter->transform($request); // [['column', 'operator', 'value']]
+
+                $includeInvoices = $request->query('includeInvoices');
+
+                $customers = Customer::where($filterItems);        
+
+                if ($includeInvoices) {
+                    // add invoices to customer
+                    $customers = $customers->with('invoices');
+                }   
+                
+                return new CustomerCollection($customers->paginate()->appends($request->query()));
+            }
+
+32) now we can check some endpoints :
+
+        api/v1/customers
+        api/v1/customers/1
+        api/v1/customers?postalCode[gt]=30000
+        api/v1/customers?postalCode[gt]=30000&type[eq]=I
+        api/v1/customers/9?includeInvoices=true
+
+33) we will create a new file named InvoicesFilter.php inside /app/Filters/V1.
+    enter the next code :
+        <?php
+
+        namespace App\Filters\V1;
+
+        use Illuminate\Http\Request;
+
+        class InvoicesFilter extends ApiFilter{
+            protected $safeParms = [
+                'customerId' => ['eq'],
+                'amount' => ['eq', 'gt', 'lt', 'lte', 'gte'],
+                'status' => ['eq', 'ne'],
+                'billedDate' => ['eq', 'gt', 'lt', 'lte', 'gte'],
+                'paidDate' => ['eq', 'gt', 'lt', 'lte', 'gte']
+            ];
+
+            protected $columnMap = [
+                'customerId' => 'customer_id',
+                'billedDate' => 'billed_date',
+                'paidDate' => 'paid_date'
+            ];
+
+            protected $operatorMap = [
+                'eq' => '=',
+                'lt' => '<',
+                'lte' => '<=',
+                'gt' => '>',
+                'gte' => '>=',
+                'ne' => '!='
+            ];
+        }
+
+34) add to InvoiceController :
+        use App\Filters\V1\InvoicesFilter;
+
+        update "index" method :
+
+            public function index(Request $request)
+            {
+                $filter = new InvoicesFilter();
+                $queryItems = $filter->transform($request); // [['column', 'operator', 'value']]
+
+                if (count($queryItems) == 0) {
+                    return new InvoiceCollection(Invoice::paginate());
+                } else {
+                    $invoices = Invoice::where($queryItems)->paginate();
+                    return new InvoiceCollection($invoices->appends($request->query()));
+                }        
+            }
+
+35) now we can check some endpoints :
+
+        api/v1/invoices
+        api/v1/invoices/1
+        api/v1/invoices?starus[eq]=P
+        api/v1/invoices?starus[ne]=P
+
+36) remove methods edit & create from CustomerController.
+
+
+
+
+
+
+
+
+
+
+
+            
